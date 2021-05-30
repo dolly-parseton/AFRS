@@ -14,9 +14,9 @@ use std::{collections::HashMap, error::Error};
 
 #[derive(Deserialize)]
 pub struct Rule {
-    name: String,
-    variables: Vec<Variable>,
-    conditional: String,
+    pub name: String,
+    pub variables: Vec<Variable>,
+    pub conditional: String,
 }
 
 #[derive(Deserialize)]
@@ -64,7 +64,7 @@ impl Variable {
 
 #[derive(Serialize)]
 pub struct Conditional {
-    raw: String,
+    pub raw: String,
     // #[serde(skip)]
     // inner: conditionals::ConditionalInner<'a>,
 }
@@ -72,7 +72,7 @@ pub struct Conditional {
 impl Conditional {
     /// Creates an, unvalidated, conditional.
     pub fn new<'a>(conditional: &str) -> Result<Self, conditionals::ParseError> {
-        let inner: conditionals::ConditionalInner = conditionals::parse(conditional)?;
+        // let inner: conditionals::ConditionalInner = conditionals::parse(conditional)?;
         Ok(Self {
             raw: conditional.into(),
             // inner,

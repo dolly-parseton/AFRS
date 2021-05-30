@@ -21,7 +21,7 @@ lazy_static! {
 
 #[derive(Debug)]
 pub struct EvalError {
-    reason: String,
+    pub reason: String,
 }
 
 impl Error for EvalError {}
@@ -34,7 +34,7 @@ impl fmt::Display for EvalError {
 
 #[derive(Debug)]
 pub struct ParseError {
-    reason: String,
+    pub reason: String,
 }
 
 impl Error for ParseError {}
