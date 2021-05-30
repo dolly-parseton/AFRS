@@ -1,0 +1,14 @@
+// Conditional
+//conditional = _{ SOI ~ expr ~ EOI }
+conditional = _{ expr }
+
+expr = { term ~ (WHITE_SPACE ~ operation ~ WHITE_SPACE ~ term)* }
+term = _{ variable | "(" ~ WHITE_SPACE? ~ expr ~ WHITE_SPACE? ~ ")" }
+
+// Variable
+variable = @{ ASCII_ALPHANUMERIC+ }
+
+// Conditionals
+operation = _{ and | or }
+or = { "or" | "OR" | "Or" | "|" }
+and = { "and" | "AND" | "And" | "&" }

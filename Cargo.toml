@@ -1,0 +1,26 @@
+[package]
+authors = ["dolly-parseton <dolly-parseton@gmail.com>"]
+edition = "2018"
+name = "afrs"
+version = "0.1.0"
+
+[[bin]]
+name = "afrs-cli"
+path = "./src/bin.rs"
+required-features = ["bin_deps"]
+
+[features]
+bin_deps = ["structopt", "serde_json"]
+
+[dependencies]
+lazy_static = "1.4.0"
+pest = "2.1.3"
+pest_derive = "2.1.0"
+# Not yet implimented (derive macro for searching a struct for a field, should be able todo this with some kind of recursive macro like serde + lazy static for the struct 'map', tricky bit will be returning the data)
+# searchable = {path = "./searchable"}
+gjson = "0.8.0"
+regex = "1"
+serde = {version = "1.0", features = ["derive"]}
+
+serde_json = {version = "1.0", optional = true}
+structopt = {version = "0.3", default-features = false, optional = true}
