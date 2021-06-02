@@ -1,4 +1,3 @@
-#[macro_use]
 extern crate serde;
 
 #[cfg(feature = "derive")]
@@ -10,20 +9,88 @@ extern crate searchable_derive;
 pub use searchable_derive::*;
 
 pub trait Searchable {
-    fn get_value(&self, field: &str) -> Option<&[u8]>;
+    fn get_value(&self, field: &str) -> Option<Vec<u8>>;
 }
 
-// #[derive(Clone, Debug, Serialize, Deserialize)]
-// pub struct Schema {
-//     pub name: String,
-//     pub fields: Vec<Field>,
-// }
+impl<T: IntoIterator<Item = impl Searchable>> Searchable for T {
+    fn get_value(&self, field: &str) -> Option<Vec<u8>> {
+        let mut v = Vec::new();
+        for i in self {
+            v.append(i.get_value(field));
+        }
+        Some(v)
+    }
+}
 
-// #[derive(Clone, Debug, Serialize, Deserialize)]
-// pub struct Field {
-//     pub field_name: String,
-//     pub field_type: String,
-//     pub doc: Option<String>,
-// }
+impl Searchable for str {
+    fn get_value(&self, _field: &str) -> Option<Vec<u8>> {
+        Some(self.as_bytes().to_owned())
+    }
+}
 
+impl Searchable for String {
+    fn get_value(&self, _field: &str) -> Option<Vec<u8>> {
+        Some(self.as_bytes().to_owned())
+    }
+}
 
+impl Searchable for u8 {
+    fn get_value(&self, _field: &str) -> Option<Vec<u8>> {
+        Some(vec![*self])
+    }
+}
+
+impl Searchable for u16 {
+    fn get_value(&self, _field: &str) -> Option<Vec<u8>> {
+        Some(vec![(self >> 8) as u8, *self as u8])
+    }
+}
+
+impl Searchable for u32 {
+    fn get_value(&self, _field: &str) -> Option<Vec<u8>> {
+        Some(vec![
+            (self >> 24) as u8,
+            (self >> 16) as u8,
+            (self >> 8) as u8,
+            *self as u8,
+        ])
+    }
+}
+
+impl Searchable for u64 {
+    fn get_value(&self, _field: &str) -> Option<Vec<u8>> {
+        Some(vec![
+            (self >> 56) as u8,
+            (self >> 48) as u8,
+            (self >> 40) as u8,
+            (self >> 32) as u8,
+            (self >> 24) as u8,
+            (self >> 16) as u8,
+            (self >> 8) as u8,
+            *self as u8,
+        ])
+    }
+}
+
+impl Searchable for u128 {
+    fn get_value(&self, _field: &str) -> Option<Vec<u8>> {
+        Some(vec![
+            (self >> 120) as u8,
+            (self >> 112) as u8,
+            (self >> 104) as u8,
+            (self >> 96) as u8,
+            (self >> 88) as u8,
+            (self >> 80) as u8,
+            (self >> 72) as u8,
+            (self >> 64) as u8,
+            (self >> 56) as u8,
+            (self >> 48) as u8,
+            (self >> 40) as u8,
+            (self >> 32) as u8,
+            (self >> 24) as u8,
+            (self >> 16) as u8,
+            (self >> 8) as u8,
+            *self as u8,
+        ])
+    }
+}
