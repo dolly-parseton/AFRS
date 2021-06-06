@@ -1,0 +1,18 @@
+{
+    "name": "Login",
+    "variables": [
+        {
+            "type": "Regex",
+            "name": "A",
+            "field": "Event.System.Provider.Name", 
+            "regex": ".*Security.*"
+        },
+        {
+            "type": "Contains",
+            "name": "B",
+            "field": "Event.System.EventID",
+            "contains": "4624" 
+        }
+    ],
+    "conditional": "A & B" 
+}

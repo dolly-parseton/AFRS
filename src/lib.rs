@@ -10,13 +10,117 @@ extern crate regex;
 
 mod conditionals;
 use regex::Regex;
-use std::{collections::HashMap, error::Error};
+use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
+use std::{collections::HashMap, error::Error, fmt};
 
-#[derive(Deserialize)]
+// #[derive(Deserialize)]
 pub struct Rule {
     pub name: String,
     pub variables: Vec<Variable>,
-    pub conditional: String,
+    // #[serde(deserialize_with = "de_conditional")]
+    pub conditional: Conditional,
+}
+
+impl<'de> Deserialize<'de> for Rule {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        enum Field {
+            Name,
+            Variables,
+            Conditional,
+        }
+
+        impl<'de> Deserialize<'de> for Field {
+            fn deserialize<D>(deserializer: D) -> Result<Field, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                struct FieldVisitor;
+
+                impl<'de> Visitor<'de> for FieldVisitor {
+                    type Value = Field;
+
+                    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                        formatter.write_str("`name` or `variables` or `conditional`")
+                    }
+
+                    fn visit_str<E>(self, value: &str) -> Result<Field, E>
+                    where
+                        E: de::Error,
+                    {
+                        match value {
+                            "name" => Ok(Field::Name),
+                            "variables" => Ok(Field::Variables),
+                            "conditional" => Ok(Field::Conditional),
+                            _ => Err(de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+
+                deserializer.deserialize_identifier(FieldVisitor)
+            }
+        }
+        struct RuleVisitor;
+        impl<'de> Visitor<'de> for RuleVisitor {
+            type Value = Rule;
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("struct Rule")
+            }
+            fn visit_map<V>(self, mut map: V) -> Result<Rule, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let mut name: Option<String> = None;
+                let mut variables: Option<Vec<Variable>> = None;
+                let mut raw_conditional: Option<String> = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Name => {
+                            if name.is_some() {
+                                return Err(de::Error::duplicate_field("name"));
+                            }
+                            name = Some(map.next_value()?);
+                        }
+                        Field::Variables => {
+                            if variables.is_some() {
+                                return Err(de::Error::duplicate_field("variables"));
+                            }
+                            variables = Some(map.next_value()?);
+                        }
+                        Field::Conditional => {
+                            if raw_conditional.is_some() {
+                                return Err(de::Error::duplicate_field("conditional"));
+                            }
+                            raw_conditional = Some(map.next_value()?);
+                        }
+                    }
+                }
+                let conditional = match (&variables, &raw_conditional) {
+                    (Some(variables), Some(conditional)) => {
+                        //
+                        Conditional::new(
+                            &conditional,
+                            variables.iter().map(|v| v.get_name().to_string()).collect(),
+                        )
+                        .map_err(|e| de::Error::custom(e))?
+                    }
+                    _ => return Err(de::Error::missing_field("conditional")),
+                };
+                let name = name.ok_or_else(|| de::Error::missing_field("name"))?;
+                let variables = variables.ok_or_else(|| de::Error::missing_field("variables"))?;
+                Ok(Rule {
+                    name,
+                    variables,
+                    conditional,
+                })
+            }
+        }
+
+        const FIELDS: &'static [&'static str] = &["name", "variables", "conditional"];
+        deserializer.deserialize_struct("Rule", FIELDS, RuleVisitor)
+    }
 }
 
 #[derive(Deserialize)]
@@ -79,6 +183,25 @@ impl Variable {
             } => field,
         }
     }
+    pub fn get_name(&self) -> &str {
+        match self {
+            Self::Regex {
+                field: _,
+                regex: _,
+                ref name,
+            } => name,
+            Self::Contains {
+                field: _,
+                contains: _,
+                ref name,
+            } => name,
+            Self::Exact {
+                field: _,
+                exact: _,
+                ref name,
+            } => name,
+        }
+    }
 
     pub fn match_against(&self, json: &str) -> (&str, bool) {
         match &self {
@@ -121,26 +244,33 @@ impl Variable {
     }
 }
 
-#[derive(Serialize)]
 pub struct Conditional {
     pub raw: String,
-    // #[serde(skip)]
-    // inner: conditionals::ConditionalInner<'a>,
+    pub variables: Vec<String>,
 }
 
 impl Conditional {
     /// Creates an, unvalidated, conditional.
-    pub fn new<'a>(conditional: &str) -> Result<Self, conditionals::ParseError> {
-        // let inner: conditionals::ConditionalInner = conditionals::parse(conditional)?;
+    pub fn new<'a>(
+        conditional: &str,
+        variables: Vec<String>,
+    ) -> Result<Self, conditionals::ParseError> {
+        let inner = conditionals::parse(conditional)?;
+        if !conditionals::validate(inner, variables.iter().map(|v| v.as_str()).collect()) {
+            return Err(conditionals::ParseError {
+                reason: "Could not validate conditional statement".into(),
+            });
+        }
         Ok(Self {
             raw: conditional.into(),
-            // inner,
+            variables,
+            // eval: Box::new(eval),
         })
     }
     pub fn eval(&self, variables: &HashMap<&str, bool>) -> bool {
         conditionals::eval(conditionals::parse(&self.raw).unwrap(), variables)
     }
-    pub fn validate(self, variables: Vec<&str>) -> bool {
+    pub fn validate(&self, variables: Vec<&str>) -> bool {
         conditionals::validate(conditionals::parse(&self.raw).unwrap(), variables)
     }
 }
@@ -148,28 +278,8 @@ impl Conditional {
 //
 impl Rule {
     pub fn validate(self) -> Result<Self, Box<dyn Error>> {
-        let keys = self
-            .variables
-            .iter()
-            .map(|v| match &v {
-                Variable::Exact {
-                    name,
-                    field: _,
-                    exact: _,
-                } => name.as_str(),
-                Variable::Contains {
-                    name,
-                    field: _,
-                    contains: _,
-                } => name.as_str(),
-                Variable::Regex {
-                    name,
-                    field: _,
-                    regex: _,
-                } => name.as_str(),
-            })
-            .collect();
-        match Conditional::new(&self.conditional)?.validate(keys) {
+        let keys = self.variables.iter().map(|v| v.get_name()).collect();
+        match self.conditional.validate(keys) {
             true => Ok(self),
             false => Err("Could not validate conditional statement".into()),
         }
@@ -183,7 +293,7 @@ impl Rule {
             map.insert(k, v);
         }
         // Run results map against Conditional
-        Conditional::new(&self.conditional).unwrap().eval(&map)
+        self.conditional.eval(&map)
     }
 
     pub fn get_matches_json(&self, json: &str) -> HashMap<String, String> {
@@ -218,7 +328,8 @@ mod tests {
                     regex: Regex::new("[a-z]{3}[0-9]{3}").unwrap(),
                 },
             ],
-            conditional: "A and B".to_string(),
+            conditional: Conditional::new("A and B", vec!["A".to_string(), "B".to_string()])
+                .unwrap(),
         };
         let json = r#"{ "field": "xabc1234", "object": { "field": "xyz321" } }"#;
         rule = rule.validate().unwrap();

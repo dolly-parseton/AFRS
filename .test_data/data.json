@@ -1,0 +1,2 @@
+{ "Event.System.Provider.Name": "blah Security blah", "Event.System.EventID": 4624 }
+{ "Event": { "System": { "Provider": {"Name": "blah Security blah"}, "EventID": 4624 } } }

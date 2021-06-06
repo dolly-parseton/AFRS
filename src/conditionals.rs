@@ -5,6 +5,7 @@ use pest::{
 };
 use std::{collections::HashMap, error::Error, fmt};
 
+/// `ConditionalParser` uses [`Pest`](https://docs.rs/pest/2.1.3/pest/) to parse the conditional string.
 #[derive(Parser)]
 #[grammar = "conditional.pest"]
 pub struct ConditionalParser {}
@@ -19,6 +20,7 @@ lazy_static! {
     };
 }
 
+/// Error struct returned when evaluating the conditional.
 #[derive(Debug)]
 pub struct EvalError {
     pub reason: String,
@@ -32,6 +34,7 @@ impl fmt::Display for EvalError {
     }
 }
 
+/// Error struct returned when parsing the conditional.
 #[derive(Debug)]
 pub struct ParseError {
     pub reason: String,
@@ -45,6 +48,7 @@ impl fmt::Display for ParseError {
     }
 }
 
+/// Function used when validating a conditional is valid, checks the variable names against what the condtional string contains recursively.
 pub fn validate(expression: Pairs<Rule>, variables: Vec<&str>) -> bool {
     fn inner(pairs: Pairs<Rule>, variables: &Vec<&str>, valid: &mut bool) {
         pairs
@@ -61,16 +65,14 @@ pub fn validate(expression: Pairs<Rule>, variables: Vec<&str>) -> bool {
     valid
 }
 
+/// Function checks the conditional against a HashMap of variable names and the boolean each variable resolves to.
 pub fn eval(expression: Pairs<Rule>, variables: &HashMap<&str, bool>) -> bool {
     PREC_CLIMBER.climb(
         expression,
-        |pair: Pair<Rule>| {
-            //
-            match pair.as_rule() {
-                Rule::variable => variables.get(pair.as_str()).map(|v| *v).unwrap(),
-                Rule::expr => eval(pair.into_inner(), variables),
-                _ => unreachable!(),
-            }
+        |pair: Pair<Rule>| match pair.as_rule() {
+            Rule::variable => variables.get(pair.as_str()).map(|v| *v).unwrap(),
+            Rule::expr => eval(pair.into_inner(), variables),
+            _ => unreachable!(),
         },
         |lhs: bool, op: Pair<Rule>, rhs: bool| match op.as_rule() {
             Rule::or => lhs | rhs,
@@ -85,7 +87,6 @@ pub fn parse(s: &str) -> Result<ConditionalInner<'_>, ParseError> {
     ConditionalParser::parse(Rule::conditional, s).map_err(|_| ParseError {
         reason: "Unable to parse conditional".into(),
     })
-    // .map(|v| v.into())
 }
 
 #[cfg(test)]
@@ -98,13 +99,11 @@ mod tests {
         map.insert("B", false);
         map.insert("C", false);
         map.insert("D", false);
-        //
-        // let parser = ConditionalParser::parse(Rule::conditional, "A | C").unwrap();
-        // println!("{:?}", parser);
-        // println!(
-        //     "Validate: {:?}",
-        //     validate(parser.clone(), &map.keys().map(|k| k.to_string()))
-        // );
-        // println!("Result: {:?}", eval(parser, &map));
+        let parser = ConditionalParser::parse(Rule::conditional, "A | C").unwrap();
+
+        let keys: Vec<&str> = map.keys().map(|v| *v).collect();
+        println!("{:?}", parser);
+        println!("Validate: {:?}", validate(parser.clone(), keys));
+        println!("Result: {:?}", eval(parser, &map));
     }
 }
