@@ -1,6 +1,6 @@
 # AFRS
 
-Another fucking rule syntax, simple quick pattern matching on JSON objects (more data types to come).
+Another f*cking rule syntax, simple quick pattern matching on JSON objects (more data types to come).
 
 ## Rule Synax
 
