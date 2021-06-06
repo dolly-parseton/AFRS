@@ -6,7 +6,7 @@ license = "MIT"
 name = "afrs"
 readme = "README.md"
 repository = "https://github.com/dolly-parseton/AFRS"
-version = "0.1.1"
+version = "0.1.2"
 
 include = [
   "**/*.rs",

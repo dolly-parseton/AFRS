@@ -147,6 +147,13 @@ pub enum Variable {
         #[serde(deserialize_with = "de_bytes")]
         contains: Vec<u8>,
     },
+    Compare {
+        name: String,
+        field: String,
+        #[serde(deserialize_with = "de_ordering")]
+        ordering: cmp::Ordering,
+        value: f64,
+    },
 }
 
 fn de_regex<'de, D>(deserializer: D) -> Result<Regex, D::Error>
@@ -158,6 +165,28 @@ where
         Ok(r) => Ok(r),
         Err(e) => Err(serde::de::Error::custom(e)),
     }
+}
+
+/// Accepts:
+/// * ">" or "greater" or "gt" for a Greater than comparison.
+/// * "<" or "less" or "lt" for a Less than comparison.
+/// * "=" or "==" or "equal" or  "eq" for a Equal to comparison.
+fn de_ordering<'de, D>(deserializer: D) -> Result<cmp::Ordering, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: String = serde::Deserialize::deserialize(deserializer)?;
+    Ok(match s.trim_end().trim_start().to_lowercase().as_str() {
+        ">" | "greater" | "gt" => (cmp::Ordering::Greater),
+        "<" | "less" | "lt" => cmp::Ordering::Less,
+        "=" | "==" | "equal" | "eq" => cmp::Ordering::Greater,
+        _ => {
+            return Err(serde::de::Error::custom(format!(
+                "\"{}\" is not a suitable ordering.",
+                s
+            )))
+        }
+    })
 }
 
 fn de_bytes<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -181,6 +210,12 @@ impl Variable {
                 contains: _,
                 name: _,
             } => field,
+            Self::Compare {
+                ref field,
+                value: _,
+                ordering: _,
+                name: _,
+            } => field,
             Self::Exact {
                 ref field,
                 exact: _,
@@ -198,6 +233,12 @@ impl Variable {
             Self::Contains {
                 field: _,
                 contains: _,
+                ref name,
+            } => name,
+            Self::Compare {
+                field: _,
+                value: _,
+                ordering: _,
                 ref name,
             } => name,
             Self::Exact {
@@ -220,36 +261,53 @@ impl Variable {
                 field,
                 exact,
             } => (name, gjson::get(json, field).str().as_bytes() == exact),
+            Variable::Compare {
+                ref name,
+                field,
+                ordering,
+                value,
+            } => match gjson::get(json, field).kind() {
+                gjson::Kind::Number => (
+                    name,
+                    match ordering {
+                        // cmp::Ordering::Equal => gjson::get(json, field).f64() == *value,
+                        cmp::Ordering::Equal => {
+                            (gjson::get(json, field).f64() - *value).abs() < f64::EPSILON
+                        }
+                        cmp::Ordering::Greater => gjson::get(json, field).f64() > *value,
+                        cmp::Ordering::Less => gjson::get(json, field).f64() < *value,
+                    },
+                ),
+                _ => (name, false),
+            },
             Variable::Contains {
                 ref name,
                 field,
                 ref contains,
-            } => {
-                match contains
-                    .len()
-                    .cmp(&gjson::get(json, field).str().as_bytes().len())
-                {
-                    cmp::Ordering::Greater => (name, false),
-                    cmp::Ordering::Equal => {
-                        (name, gjson::get(json, field).str().as_bytes() == contains)
-                    }
-                    cmp::Ordering::Less => {
-                        let increment = gjson::get(json, field).str().as_bytes().len()
-                            - gjson::get(json, field).str().as_bytes().len() % contains.len();
-                        let data: Vec<u8> = gjson::get(json, field).str().as_bytes().to_owned();
-                        for i in 0..(data.len() % contains.len() + 1) {
-                            // println!("data: {:?} slice: {:?}", data, slice);
-                            // println!("range: {:?}", (i)..(i + increment));
-                            // println!("conditional: {:?}", (slice == contains));
-                            // is_match = is_match | (slice == contains);
-                            if &data[i..i + increment] == contains {
-                                return (name, true);
-                            }
-                        }
-                        (name, false)
-                    }
+            } => match contains
+                .len()
+                .cmp(&gjson::get(json, field).str().as_bytes().len())
+            {
+                cmp::Ordering::Greater => (name, false),
+                cmp::Ordering::Equal => {
+                    (name, gjson::get(json, field).str().as_bytes() == contains)
                 }
-            }
+                cmp::Ordering::Less => {
+                    let increment = gjson::get(json, field).str().as_bytes().len()
+                        - gjson::get(json, field).str().as_bytes().len() % contains.len();
+                    let data: Vec<u8> = gjson::get(json, field).str().as_bytes().to_owned();
+                    for i in 0..(data.len() % contains.len() + 1) {
+                        // println!("data: {:?} slice: {:?}", data, slice);
+                        // println!("range: {:?}", (i)..(i + increment));
+                        // println!("conditional: {:?}", (slice == contains));
+                        // is_match = is_match | (slice == contains);
+                        if &data[i..i + increment] == contains {
+                            return (name, true);
+                        }
+                    }
+                    (name, false)
+                }
+            },
         }
     }
 }
