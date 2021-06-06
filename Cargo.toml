@@ -1,6 +1,6 @@
 [package]
 authors = ["dolly-parseton <dolly.parseton@gmail.com>"]
-description = "Another f*cking rule syntax, simple quick pattern matching on JSON objects (more data types to come)."
+description = "Another f****** rule syntax, simple quick pattern matching on JSON objects (more data types to come)."
 edition = "2018"
 license = "MIT"
 name = "afrs"
