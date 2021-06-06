@@ -11,7 +11,7 @@ extern crate regex;
 mod conditionals;
 use regex::Regex;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
-use std::{collections::HashMap, error::Error, fmt};
+use std::{cmp, collections::HashMap, error::Error, fmt};
 
 // #[derive(Deserialize)]
 pub struct Rule {
@@ -100,14 +100,16 @@ impl<'de> Deserialize<'de> for Rule {
                 let conditional = match (&variables, &raw_conditional) {
                     (Some(variables), Some(conditional)) => {
                         //
-                        Conditional::new(
+                        match Conditional::new(
                             &conditional,
                             variables.iter().map(|v| v.get_name().to_string()).collect(),
-                        )
-                        .map_err(|e| de::Error::custom(e))?
+                        ) {
+                            Ok(c) => Ok(c),
+                            Err(e) => Err(serde::de::Error::custom(e)),
+                        }
                     }
                     _ => return Err(de::Error::missing_field("conditional")),
-                };
+                }?;
                 let name = name.ok_or_else(|| de::Error::missing_field("name"))?;
                 let variables = variables.ok_or_else(|| de::Error::missing_field("variables"))?;
                 Ok(Rule {
@@ -118,7 +120,7 @@ impl<'de> Deserialize<'de> for Rule {
             }
         }
 
-        const FIELDS: &'static [&'static str] = &["name", "variables", "conditional"];
+        const FIELDS: &[&str] = &["name", "variables", "conditional"];
         deserializer.deserialize_struct("Rule", FIELDS, RuleVisitor)
     }
 }
@@ -152,7 +154,10 @@ where
     D: serde::Deserializer<'de>,
 {
     let s: String = serde::Deserialize::deserialize(deserializer)?;
-    Regex::new(&s).map_err(|e| serde::de::Error::custom(e))
+    match Regex::new(&s) {
+        Ok(r) => Ok(r),
+        Err(e) => Err(serde::de::Error::custom(e)),
+    }
 }
 
 fn de_bytes<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -220,25 +225,30 @@ impl Variable {
                 field,
                 ref contains,
             } => {
-                if contains.len() > gjson::get(json, field).str().as_bytes().len() {
-                    return (name, false);
-                } else if contains.len() == gjson::get(json, field).str().as_bytes().len() {
-                    return (name, gjson::get(json, field).str().as_bytes() == contains);
-                }
-                //
-                let increment = gjson::get(json, field).str().as_bytes().len()
-                    - gjson::get(json, field).str().as_bytes().len() % contains.len();
-                let data: Vec<u8> = gjson::get(json, field).str().as_bytes().to_owned();
-                for i in 0..(data.len() % contains.len() + 1) {
-                    // println!("data: {:?} slice: {:?}", data, slice);
-                    // println!("range: {:?}", (i)..(i + increment));
-                    // println!("conditional: {:?}", (slice == contains));
-                    // is_match = is_match | (slice == contains);
-                    if &data[i..i + increment] == contains {
-                        return (name, true);
+                match contains
+                    .len()
+                    .cmp(&gjson::get(json, field).str().as_bytes().len())
+                {
+                    cmp::Ordering::Greater => (name, false),
+                    cmp::Ordering::Equal => {
+                        (name, gjson::get(json, field).str().as_bytes() == contains)
+                    }
+                    cmp::Ordering::Less => {
+                        let increment = gjson::get(json, field).str().as_bytes().len()
+                            - gjson::get(json, field).str().as_bytes().len() % contains.len();
+                        let data: Vec<u8> = gjson::get(json, field).str().as_bytes().to_owned();
+                        for i in 0..(data.len() % contains.len() + 1) {
+                            // println!("data: {:?} slice: {:?}", data, slice);
+                            // println!("range: {:?}", (i)..(i + increment));
+                            // println!("conditional: {:?}", (slice == contains));
+                            // is_match = is_match | (slice == contains);
+                            if &data[i..i + increment] == contains {
+                                return (name, true);
+                            }
+                        }
+                        (name, false)
                     }
                 }
-                (name, false)
             }
         }
     }
@@ -251,7 +261,7 @@ pub struct Conditional {
 
 impl Conditional {
     /// Creates an, unvalidated, conditional.
-    pub fn new<'a>(
+    pub fn new(
         conditional: &str,
         variables: Vec<String>,
     ) -> Result<Self, conditionals::ParseError> {

@@ -50,11 +50,11 @@ impl fmt::Display for ParseError {
 
 /// Function used when validating a conditional is valid, checks the variable names against what the condtional string contains recursively.
 pub fn validate(expression: Pairs<Rule>, variables: Vec<&str>) -> bool {
-    fn inner(pairs: Pairs<Rule>, variables: &Vec<&str>, valid: &mut bool) {
+    fn inner(pairs: Pairs<Rule>, variables: &[&str], valid: &mut bool) {
         pairs
             .into_iter()
             .map(|pair| match pair.as_rule() {
-                Rule::variable => *valid = variables.contains(&pair.as_str()) & *valid,
+                Rule::variable => *valid &= variables.contains(&pair.as_str()),
                 Rule::expr => inner(pair.into_inner(), variables, valid),
                 _ => (),
             })
@@ -70,7 +70,7 @@ pub fn eval(expression: Pairs<Rule>, variables: &HashMap<&str, bool>) -> bool {
     PREC_CLIMBER.climb(
         expression,
         |pair: Pair<Rule>| match pair.as_rule() {
-            Rule::variable => variables.get(pair.as_str()).map(|v| *v).unwrap(),
+            Rule::variable => variables.get(pair.as_str()).copied().unwrap(),
             Rule::expr => eval(pair.into_inner(), variables),
             _ => unreachable!(),
         },
