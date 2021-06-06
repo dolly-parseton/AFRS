@@ -20,6 +20,8 @@ pub struct Rule {
 }
 
 #[derive(Deserialize)]
+// #[serde(untagged)]
+#[serde(tag = "type")]
 pub enum Variable {
     Regex {
         name: String,
@@ -27,10 +29,17 @@ pub enum Variable {
         #[serde(deserialize_with = "de_regex")]
         regex: Regex,
     },
-    Raw {
+    Exact {
         name: String,
         field: String,
-        data: Vec<u8>,
+        #[serde(deserialize_with = "de_bytes")]
+        exact: Vec<u8>,
+    },
+    Contains {
+        name: String,
+        field: String,
+        #[serde(deserialize_with = "de_bytes")]
+        contains: Vec<u8>,
     },
 }
 
@@ -38,26 +47,76 @@ fn de_regex<'de, D>(deserializer: D) -> Result<Regex, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let s: &str = serde::Deserialize::deserialize(deserializer)?;
-    Regex::new(s).map_err(|e| serde::de::Error::custom(e))
+    let s: String = serde::Deserialize::deserialize(deserializer)?;
+    Regex::new(&s).map_err(|e| serde::de::Error::custom(e))
+}
+
+fn de_bytes<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: String = serde::Deserialize::deserialize(deserializer)?;
+    Ok(s.as_bytes().to_owned())
 }
 
 impl Variable {
+    pub fn get_field(&self) -> &str {
+        match self {
+            Self::Regex {
+                ref field,
+                regex: _,
+                name: _,
+            } => field,
+            Self::Contains {
+                ref field,
+                contains: _,
+                name: _,
+            } => field,
+            Self::Exact {
+                ref field,
+                exact: _,
+                name: _,
+            } => field,
+        }
+    }
+
     pub fn match_against(&self, json: &str) -> (&str, bool) {
         match &self {
             Variable::Regex {
                 ref name,
                 field,
                 regex,
-            } => {
-                println!("Data: {}", gjson::get(json, field).str());
-                (name, regex.is_match(gjson::get(json, field).str()))
-            }
-            Variable::Raw {
+            } => (name, regex.is_match(gjson::get(json, field).str())),
+            Variable::Exact {
                 ref name,
                 field,
-                data,
-            } => (name, gjson::get(json, field).str().as_bytes() == data),
+                exact,
+            } => (name, gjson::get(json, field).str().as_bytes() == exact),
+            Variable::Contains {
+                ref name,
+                field,
+                ref contains,
+            } => {
+                if contains.len() > gjson::get(json, field).str().as_bytes().len() {
+                    return (name, false);
+                } else if contains.len() == gjson::get(json, field).str().as_bytes().len() {
+                    return (name, gjson::get(json, field).str().as_bytes() == contains);
+                }
+                //
+                let increment = gjson::get(json, field).str().as_bytes().len()
+                    - gjson::get(json, field).str().as_bytes().len() % contains.len();
+                let data: Vec<u8> = gjson::get(json, field).str().as_bytes().to_owned();
+                for i in 0..(data.len() % contains.len() + 1) {
+                    // println!("data: {:?} slice: {:?}", data, slice);
+                    // println!("range: {:?}", (i)..(i + increment));
+                    // println!("conditional: {:?}", (slice == contains));
+                    // is_match = is_match | (slice == contains);
+                    if &data[i..i + increment] == contains {
+                        return (name, true);
+                    }
+                }
+                (name, false)
+            }
         }
     }
 }
@@ -93,10 +152,15 @@ impl Rule {
             .variables
             .iter()
             .map(|v| match &v {
-                Variable::Raw {
+                Variable::Exact {
                     name,
                     field: _,
-                    data: _,
+                    exact: _,
+                } => name.as_str(),
+                Variable::Contains {
+                    name,
+                    field: _,
+                    contains: _,
                 } => name.as_str(),
                 Variable::Regex {
                     name,
@@ -105,7 +169,6 @@ impl Rule {
                 } => name.as_str(),
             })
             .collect();
-        println!("{:?}", keys);
         match Conditional::new(&self.conditional)?.validate(keys) {
             true => Ok(self),
             false => Err("Could not validate conditional statement".into()),
@@ -122,6 +185,18 @@ impl Rule {
         // Run results map against Conditional
         Conditional::new(&self.conditional).unwrap().eval(&map)
     }
+
+    pub fn get_matches_json(&self, json: &str) -> HashMap<String, String> {
+        self.variables
+            .iter()
+            .map(|v| {
+                (
+                    v.get_field().into(),
+                    gjson::get(json, v.get_field()).str().into(),
+                )
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -132,10 +207,10 @@ mod tests {
         let mut rule = Rule {
             name: "test_rule".to_string(),
             variables: vec![
-                Variable::Raw {
+                Variable::Contains {
                     name: "A".to_string(),
                     field: "field".to_string(),
-                    data: "abc123".as_bytes().to_vec(),
+                    contains: "abc123".as_bytes().to_vec(),
                 },
                 Variable::Regex {
                     name: "B".to_string(),
@@ -145,11 +220,8 @@ mod tests {
             ],
             conditional: "A and B".to_string(),
         };
-
-        let json = r#"{ "field": "abc123", "object": { "field": "xyz321" } }"#;
-        //
+        let json = r#"{ "field": "xabc1234", "object": { "field": "xyz321" } }"#;
         rule = rule.validate().unwrap();
-
         assert!(rule.match_json(json));
     }
 }

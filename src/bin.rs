@@ -16,7 +16,7 @@ use structopt::StructOpt;
 )]
 struct Opt {
     /// Provide one or more paths to valid JSON files. No validation is done on each object in a file. NDJson only for the time being.
-    #[structopt(parse(from_os_str))]
+    #[structopt(short, long, parse(from_os_str))]
     input: Vec<PathBuf>,
 
     /// Provide one or more paths to valid AFRS rule files. Deserializes using serde so can accept most formats, JSON for now.
@@ -38,7 +38,7 @@ fn main() {
         let rule: Rule = serde_json::from_reader(r).unwrap();
         rules.push(rule.validate().unwrap());
     }
-
+    //
     if rules.len() == 0 {
         eprintln!("No valid rules provided.");
         std::process::exit(1);
@@ -51,7 +51,7 @@ fn main() {
             if let Ok(json_line) = line {
                 for rule in &rules {
                     if rule.match_json(&json_line) {
-                        println!("{}", json_line);
+                        println!("{:?}", rule.get_matches_json(&json_line));
                     }
                 }
                 // Output conditional
