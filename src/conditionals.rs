@@ -70,7 +70,11 @@ pub fn eval(expression: Pairs<Rule>, variables: &HashMap<&str, bool>) -> bool {
     PREC_CLIMBER.climb(
         expression,
         |pair: Pair<Rule>| match pair.as_rule() {
-            Rule::variable => variables.get(pair.as_str()).copied().unwrap(),
+            Rule::variable => match variables.get(pair.as_str()).copied() {
+                Some(x) => x,
+                // If it cannot be copied that can be considered unreachable.
+                _ => unreachable!(),
+            },
             Rule::expr => eval(pair.into_inner(), variables),
             _ => unreachable!(),
         },

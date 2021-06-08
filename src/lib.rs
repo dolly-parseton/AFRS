@@ -335,25 +335,24 @@ impl Conditional {
             // eval: Box::new(eval),
         })
     }
-    pub fn eval(&self, variables: &HashMap<&str, bool>) -> bool {
-        conditionals::eval(conditionals::parse(&self.raw).unwrap(), variables)
+    pub fn eval(&self, variables: &HashMap<&str, bool>) -> Result<bool, conditionals::ParseError> {
+        conditionals::parse(&self.raw).map(|r| conditionals::eval(r, variables))
     }
-    pub fn validate(&self, variables: Vec<&str>) -> bool {
-        conditionals::validate(conditionals::parse(&self.raw).unwrap(), variables)
+    pub fn validate(&self, variables: Vec<&str>) -> Result<bool, conditionals::ParseError> {
+        conditionals::parse(&self.raw).map(|r| conditionals::validate(r, variables))
     }
 }
 
-//
 impl Rule {
     pub fn validate(self) -> Result<Self, Box<dyn Error>> {
         let keys = self.variables.iter().map(|v| v.get_name()).collect();
         match self.conditional.validate(keys) {
-            true => Ok(self),
-            false => Err("Could not validate conditional statement".into()),
+            Ok(true) => Ok(self),
+            Ok(false) | Err(_) => Err("Could not validate conditional statement".into()),
         }
     }
 
-    pub fn match_json(&self, json: &str) -> bool {
+    pub fn match_json(&self, json: &str) -> Result<bool, conditionals::ParseError> {
         let mut map = HashMap::new();
         // Collect and match each Variable
         for v in &self.variables {

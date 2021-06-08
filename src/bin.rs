@@ -50,7 +50,7 @@ fn main() {
         for line in BufReader::new(f).lines() {
             if let Ok(json_line) = line {
                 for rule in &rules {
-                    if rule.match_json(&json_line) {
+                    if let Ok(true) = rule.match_json(&json_line) {
                         println!("{:?}", rule.get_matches_json(&json_line));
                     }
                 }
